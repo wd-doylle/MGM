@@ -1,0 +1,123 @@
+\documentclass[11pt, oneside]{article}   	% use "amsart" instead of "article" for AMSLaTeX format
+\usepackage{geometry}                		% See geometry.pdf to learn the layout options. There are lots.
+\geometry{letterpaper}                   		% ... or a4paper or a5paper or ... 
+%\geometry{landscape}                		% Activate for rotated page geometry
+%\usepackage[parfill]{parskip}    		% Activate to begin paragraphs with an empty line rather than an indent
+\usepackage{graphicx}				% Use pdf, png, jpg, or eps§ with pdflatex; use eps in DVI mode
+\usepackage{listings}				% TeX will automatically convert eps --> pdf in pdflatex		
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage{float}
+%SetFonts
+
+%SetFonts
+
+
+\title{Brief Article}
+\author{The Author}
+%\date{}							% Activate to display a given date or no date
+
+\begin{document}
+\maketitle
+\section{MGM-Floyd}
+MGM-Floyd aims to seek an optimal composition path of initial matchings between any two vertices on the supergraph. The algorithm mainly consists of three parts:
+\begin{itemize}
+\item[affinityScore] Define\\
+ \textbf{X} partial permutation matrix indicating the node correspondence\\
+ \textbf{K}($\in R^{n_1n_2\times n_1n_2}$) affinity matrix whose diagonal (off-diagonal) encodes the node-to-node affinity (edge-to-edge affinity) between two graphs.\\
+ Formally, we have 
+ \begin{align} % requires amsmath; align* for no eq. number
+    J(X) = \min\limits_{X\in \{0,1\}^{n_1\times n_2}} vec(X)^TKvec(X)
+ \end{align}
+In code we have
+\begin{lstlisting}[language={[ANSI]C},keywordstyle=\color{blue!70},commentstyle=\color{red!50!green!50!blue!50},frame=shadowbox, rulesepcolor=\color{red!20!green!20!blue!20}] 
+vecX = np.reshape(X, (num_graph,num_graph,num_node*num_node,1))
+vecXt = vecX.transpose((0, 1, 3, 2))
+normScore =
+ np.matmul(np.matmul(vecXt, K), vecX).reshape(num_graph, num_graph)/1
+\end{lstlisting}
+
+\item[pairwiseConsistency]  Given $\{G_k\}^N_{k=1}$ and matching configuration X\\
+ for any pair $G_i$ and $G_j$, formally we have
+ \begin{align} % requires amsmath; align* for no eq. number
+    C(X_{ij},X) = 1 - \frac{\sum_{k=1}^N||X_{ij}-X_{ik}X_{kj}||_F/2}{nN}
+ \end{align} 
+In code we have
+\begin{lstlisting}[language={[ANSI]C},keywordstyle=\color{blue!70},commentstyle=\color{red!50!green!50!blue!50},frame=shadowbox, rulesepcolor=\color{red!20!green!20!blue!20}] 
+Xt = X.transpose((0, 1, 3, 2))
+sigma = np.abs(X - np.matmul(X, Xt)).sum((2, 3))
+pairwiseConsistency = 1 - sigma / (2 * num_graph * num_node)
+\end{lstlisting}
+
+\item With the tools above we can implement the algorithm
+\begin{figure}[H]
+   \centering
+   \includegraphics[scale=0.7]{p1} % requires the graphicx package
+\end{figure}
+It is obvious that line 8 is only different from line 2~7 of $\lambda$, so we can implement line 2~7 first
+\begin{lstlisting}[language={[ANSI]C},keywordstyle=\color{blue!70},commentstyle=\color{red!50!green!50!blue!50},frame=shadowbox, rulesepcolor=\color{red!20!green!20!blue!20}] 
+    for i in range(num_graph):
+        X_xvy = np.matmul(X[:, i, None], X[i, None,:])
+        S_org = affinityScore(X,K,num_graph,num_node)
+        S_xvy = (1-lam)*affinityScore(X_xvy, K,num_graph, num_node)
+        compare = S_xvy > S_org
+        for j in range(24):
+            for k in range(24):
+                if compare[i,j]:
+                    X[j,k] = X_xvy[j,k]
+    return X
+\end{lstlisting}
+Line 3 of code corresponds to line 4 of algorithm above, line 4 corresponds to line 5, line 8~9 corresponds to line 6~7. For line 8 of the algorithm above we just reuse line 2~7. At last we can wrap them into a function.
+\begin{lstlisting}[language={[ANSI]C},keywordstyle=\color{blue!70},commentstyle=\color{red!50!green!50!blue!50},frame=shadowbox, rulesepcolor=\color{red!20!green!20!blue!20}] 
+def Line2_7(X, K, num_graph, num_node, lam):
+    if lam == 0:
+        for i in range(num_graph):
+            X_xvy = np.matmul(X[:, i, None], X[i, None,:])
+            S_org = affinityScore(X,K,num_graph,num_node)
+            S_xvy = (1-lam)*affinityScore(X_xvy, K,num_graph, num_node)
+            compare = S_xvy > S_org
+            for j in range(24):
+                for k in range(24):
+                    if compare[i,j]:
+                        X[j,k] = X_xvy[j,k]
+        return X
+
+    else:
+        for i in range(num_graph):
+            pairwise_consistency = pairwiseConsistency(X,num_graph,num_node)
+            X_xvy = np.matmul(X[:, i,None], X[i,None, :])
+            S_org = (1-lam)*affinityScore(X,K,num_graph,num_node) 
+            			+ lam*pairwise_consistency
+            S_xvy = (1-lam)*affinityScore(X_xvy, K,num_graph, num_node) 
+            			+ lam*pairwise_consistency
+            compare = S_xvy > S_org
+            for j in range(24):
+                for k in range(24):
+                    if compare[j,k]:
+                        X[j,k] = X_xvy[j,k]
+        return X
+\end{lstlisting}
+So the function mgm\_floyd is very simple
+\begin{lstlisting}[language={[ANSI]C},keywordstyle=\color{blue!70},commentstyle=\color{red!50!green!50!blue!50},frame=shadowbox, rulesepcolor=\color{red!20!green!20!blue!20}] 
+def mgm_floyd(X, K, num_graph, num_node):
+    X = Line2_7(X, K, num_graph, num_node, 0)
+    X = Line2_7(X, K, num_graph, num_node, 0.3)
+    return X
+\end{lstlisting}
+Display results through the test
+\begin{figure}[H]
+   \centering
+   \includegraphics[scale=0.2]{p2} % requires the graphicx package
+\end{figure}
+\begin{figure}[H]
+   \centering
+   \includegraphics[scale=0.2]{p3} % requires the graphicx package
+\end{figure}
+
+\end{itemize}
+
+
+
+
+\end{document}  
